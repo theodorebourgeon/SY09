@@ -1,0 +1,508 @@
+---
+title: "Projet - SY09"
+subtitle : "Détection de fraude à la carte bancaire"
+author: "BOURGEON Théodore, HAIFEI Zhang, TARDIO Iker"
+output: html_notebook
+---
+
+# Introduction 
+
+## Contexte
+La reconnaissance de fraude à la carte de crédit est important pour les orgnaismes bancaires pour éviter à leurs clients de se faire facturer des objects qu'ils n'ont pas acheté.
+
+## Contenu
+Le dataset contient des transactions effectuées par des cartes bancaires en Septembre 2013 pendant 2 jours par des détenteurs européens. Le dataset est très déséquilibré : la classe des fraudes représente seulement  0.172% des observations. 
+
+Il contient seuleument **les 28 premières composantes principales résultant d'une ACP** pour des raisons de confidentialitée ainsi que : 
+
+* **Time** contient le nombre de secondes écoulées entre chaque transaction et la première du dataset.
+* **Amount** est le montant de la transaction, il peut etre utilisé pour un apprentissage sensible aux coûts et dépendant de l'exemple (example-dependant cost-senstive learning). 
+* **Class** est la varibale de classe, 1 correspond à un fraudeur, 0 sinon.
+
+# Analyse 
+```{r include=FALSE}
+if(!require(DMwR)){
+    install.packages("DMwR")
+}
+if(!require(corrplot)){
+    install.packages("corrplot")
+}
+if(!require(lattice)){
+    install.packages("lattice")
+}
+if(!require(grid)){
+    install.packages("grid")
+}
+if(!require(leaps)){
+    install.packages("leaps")
+}
+if(!require(Rtsne)){
+    install.packages("Rtsne")
+}
+if(!require(FNN)){
+    install.packages("FNN")
+}
+if(!require(MASS)){
+    install.packages("MASS")
+}
+if(!require(pROC)){
+    install.packages("pROC")
+}
+if(!require(e1071)){
+    install.packages("e1071")
+}
+if(!require(tree)){
+  install.packages("tree")
+}
+if(!require(ipred)){
+  install.packages("ipred")
+}
+if(!require(randomForest)){
+  install.packages("randomForest")
+}
+
+library(DMwR)
+library(corrplot)
+library(lattice)
+library(grid)
+library(leaps)
+library(Rtsne)
+library(FNN)
+library(MASS)
+library(pROC)
+library(e1071)
+library(tree)
+library(ipred)
+library(randomForest)
+```
+
+## Analyse exploratoire
+
+```{r}
+data <- read.csv("data/creditcard.csv", header = TRUE)
+```
+
+```{r}
+head(data)
+dim(data)
+```
+
+```{r}
+data$Class <- as.factor(data$Class)
+levels(data$Class)
+```
+
+On constate que notre jeu de donnée comporte 284 807 observations avec 30 prédicteurs et une colonne de classe.
+
+```{r}
+length(data$Class[data$Class == 0])
+length(data$Class[data$Class == 1])
+```
+On possède 284 315 (99,82725 %) de non fraudeurs et 492 (0,1727486 %) observations de fraudeurs.
+
+```{r}
+# Correlation matrix
+mcor<-cor(data[,-31])
+corrplot::corrplot(mcor,type="upper",tl.col="black",tl.srt=45)
+```
+Les variables sont très peu, voir pas corrélées. On peut supposer que la variable amount le soit légèrement car elle dépend de caractéristiques amont de l'ACP. On vérifie ainsi que l'ACP à bien joué son role et décorélé le jeu de donnée dans ses 28 composantes principales. 
+
+Nous nous concentrerons dans un premier temps sur les données dont nous avons des informations, c'est à dire **Time** et **Amount** avant de regarder les informations propre à l'ACP.
+
+-----------------------------------------------------------------------------------------
+
+## TIME
+
+```{r}
+summary(data$Time)
+```
+Les données data$Time sont bien comprises entre 0 et 172792 pour la dernière transactions : cela correspond bien à deux jours de transactions.
+
+```{r}
+hist(data$Time,main="Repartition des transactions par heure",xlab="timestamp",ylab="Effectifs", breaks=seq(0,172800, by=3600), col="grey")
+```
+La répartition des transactions semble correspondre à l'activité des utilisateur, on observe 6h creusent qui correspondent aux heures de nuit de l'union européenne en prenant en compte le décalage horaire. 
+
+Regardons si les fraudeurs respectent un pattern horaire pour leurs attaques. 
+```{r}
+hist(data$Time[data$Class == 1],main="Repartition des transactions frauduleuses par heure",xlab="timestamp",ylab="Effectifs", breaks=seq(0,172800, by=3600), col="grey")
+```
+Nous n'observons aucun modèle particulier. Dans ce cas nous pouvons supprimer ce predicteur dans nos modèles.
+```{r}
+data <- data[,-1]
+```
+
+
+-----------------------------------------------------------------------------------------
+
+## AMOUNT
+
+```{r}
+summary(data$Amount)
+```
+Les transactions ont une moyenne de 88,35 euros et s'échelonnent de 0 à 25 000 euros.
+
+On constate que le minimum de transaction est de 0.00 euros.
+```{r}
+data.frame(
+    Nombre_transaction_0_euros = c("Total", "Valide", "Frauduleuse"),
+    Value = c(sum(data$Amount == 0), sum(data$Amount[data$Class == 0] == 0), sum(data$Amount[data$Class == 1] == 0))
+  )
+```
+Le dataset comprend 1825 transactions avec des montants nuls (1798 valides et 27 frauduleuses). Nous considérons ces données non pertinentes et les supprimons de notre jeu de donnée.
+```{r}
+dim(data)[1]
+data <- data[data$Amount != 0,]
+dim(data)[1]
+```
+On passe alors de 284807 observations à 282982.
+
+```{r}
+hist(data$Amount,main="Distribution du montant des transactions", col="grey")
+```
+On constate qu'une majorité des transactions est à montant faible, ce qui nous invite à regarder la proportion de montant supérieur à 1000euros. En effet, nous recherchons un modèle généralisant au mieux nos données et préférons supprimer les outliers de notre dataset. Nous ferons attention à ce que cela ne comprenne pas trop de donnée frauduleuse (en effet nous n'en possédons peu). Notre modèle d'appliquera donc aux transactions d'un montant inférieur à 1000euros. Si celui-ce dépasse, un autre modèle devra s'appliquer (ou une action humaine de vérification).
+
+```{r}
+boxplot(data$Amount)
+data.frame(
+    Nombre_transaction_sup_1000_euros = c("Total", "Valide", "Frauduleuse"),
+    Value = c(sum(data$Amount >= 1000), sum(data$Amount[data$Class == 0] >= 1000), sum(data$Amount[data$Class == 1] >= 1000))
+  )
+```
+
+```{r}
+dim(data)[1]
+data <- data[data$Amount <= 1000,]
+dim(data)[1]
+dim(data[data$Class == 0,])[1]
+dim(data[data$Class == 1,])[1]
+```
+Nous passons de 282982 observations à 280042 (456 frauduleuses et 279586 valides). L'explication de ce nombre faible de transaction frauduleuse à montant élevé est que les fraudeurs cherchent à éviter au maximum d'attirer l'attention. Ils préfèrent donc effectuer des transactions à montant raisonnable pour passer à travers les mailles du filet.
+
+
+```{r}
+summary(data$Amount[data$Class == 1])
+summary(data$Amount[data$Class == 0])
+```
+On constate qu'en moyenne le montant des transactions frauduleuses est de 102.83e contre 70.82e pour les transactions valides. En moyenne, cela montre bien que les fraudeurs cherchent à maximiser leur gain par rapport aux transactions classiques.
+
+
+### Normalisation et centrage 
+
+Il se trouve que le montant est la seule caractéristique utile qui ne soit pas normalisé, or pour pouvoir entrainer nos modèles il est préférable de travailler avec des données homogènes.
+
+```{r}
+data$Amount <- scale(data$Amount, center = TRUE, scale = TRUE)
+summary(data$Amount)
+```
+
+-----------------------------------------------------------------------------------------
+
+## ACP
+
+Concentrons nous ensuite sur les composantes principales. Nous n'avons pas d'informations particulière sur ces données mais nous pouvons nous servir de cette ACP pour effectuer une selection de variable par la variance expliquée cumulée pour ne conserver que les composantes principales qui concentrent le plus d'informations et nous pouvons effectuer des représentations graphiques.
+```{r}
+#ACP
+pca <- data[,c(-29,-30)]
+
+#number of principal components
+vars <- apply(pca,2,var)
+props <- vars / sum(vars)
+
+plot(cumsum(props)*100,xlab='composante principale',ylab='% explique')
+abline(h=90,col=4,lty=2)
+```
+La variance expliqué cumulé des composantes principales nous dit que 90% de l'information se concentre dans les 19 premières composantes. Ainsi nous pouvons réduire le modèle et selectionner uniquement les variables les plus significatives.
+
+
+### Représentation graphique
+
+```{r}
+pairs(data[,1:4],main = "Plan principaux" ,col = c("red", "blue")[data$Class])
+```
+
+```{r}
+library(factoextra)
+data.acp1 <- prcomp(data[,-30], scale. = FALSE)
+fviz_eig(data.acp1)
+plot(data.acp1$x[,2]~data.acp1$x[,1], col = c("red", "blue")[data$Class])
+
+data.acp2 <- prcomp(over_data[,c(-1,-31)], scale. = FALSE)
+fviz_eig(data.acp2)
+plot(data.acp2$x[,2]~data.acp2$x[,1], col = c("red", "blue")[over_data$Class])
+
+data.acp3 <- prcomp(under_data[,c(-1,-31)], scale. = FALSE)
+fviz_eig(data.acp3)
+plot(data.acp3$x[,2]~data.acp3$x[,1], col = c("red", "blue")[under_data$Class])
+```
+
+-----------------------------------------------------------------------------------------
+
+## Sélection de variable 
+
+```{r}
+data$Class <- as.numeric(levels(data$Class))[data$Class]
+summary(lm(Class~.,data=data))
+data$Class <- as.factor(data$Class)
+```
+Cette sélection par la p-value permet de mettre en avant que les predicteurs V13, V15, V20 et V23 ne sont pas significatif par rapport aux autres. 
+
+```{r}
+regsubset <- regsubsets(Class~., data=data, method = "exhaustive", nvmax = 30)
+plot(regsubset, scale = "bic")
+res.sum <- summary(regsubset)
+data.frame(BIC = which.min(res.sum$bic))
+names(data)[summary(regsubset)$which[which.min(summary(regsubset)$bic),-1]]
+```
+
+Cette sélection permet de mettre en avant 25 prédicteurs principaux. On constate que cela produit le meme résultat que la sélection par la p-value.
+
+Nous allons par la suite appliquer à ces sélections des modèles différents afin de prédire de manière précise les transactions frauduleuses. Nous avons en premier le modèle global, en deuxième celui produit par la variance expliquée des composantes principales et le dernier par sélection de varibale (regsubset).
+
+```{r}
+Formula <- c(
+  Class~.,
+  Class~.-c(V20,V21,V22,V23,V24,V25,V26,V27,V28),
+  Class~.-c(V13,V15,V20,V23)
+)
+```
+
+-----------------------------------------------------------------------------------------
+
+# Solution au problème de déséquilibre de classe
+
+Le problème principal de ce jeu de donnée est de créer un jeu de donnée qui représente au mieux les caractéristiques des transactions valides et frauduleuses. En effet, le déséquilibre du jeu de donnée de base va fortement influencer le modèle dans le choix des modèles : il ne prédira quasiment jamais de fraude. Il aura plus de 99% de précision dans ce cas et on considérera que la précision de notre modèle est bon alors qu'il ne prédit en aucun cas la détection de fraude.
+
+Ainsi, nous divisons le jeu de données de trois manières différentes: partitionnement direct, sous-échantillonnage et sur-échantillonnage. 
+
+## Partitionnement direct
+
+Dans cette méthode, nous divisons directement le jeu de données en un ensemble d'apprentissage et un ensemble de test selon un ratio de 0,7 à 0,3. Il en résulte que les échantillons positifs et négatifs de l'ensemble d'apprentissage et de l'ensemble de test restent extrêmement déséquilibrés.
+```{r, echo=FALSE}
+train_sub = sample(nrow(data),floor(0.7*nrow(data)),replace = FALSE)
+train_data = data[train_sub,]
+test_data = data[-train_sub,]
+train_y = train_data$Class
+train_x = subset(train_data,select = -c(Class))
+test_y = test_data$Class
+test_x = subset(test_data,select = -c(Class))
+cat("class0 : class1 dans l'ensemble d'apprentissage est ",
+    length(train_y[train_y==0]),":",length(train_y[train_y==1]),"\n")
+cat("class0 : class1 dans l'ensemble de test est ",
++     length(test_y[test_y==0]),":",length(test_y[test_y==1]))
+```
+
+## Sous-échantillonnage
+
+Pour les deux types de données gravement inégales dans l'ensemble de données, parmi les échantillons les plus abondants, sélectionnez de manière aléatoire le même nombre d'échantillons que le plus petit nombre d'échantillons et, finalement, formez le même nombre d'échantillons positifs et négatifs.
+```{r, echo=FALSE}
+under_sub = sample(nrow(data[data$Class==0,]),nrow(data[data$Class==1,]),replace = FALSE)
+under_data = data[c(under_sub,which(data$Class==1)),]
+train_sub = sample(nrow(under_data),floor(0.7*nrow(under_data)),replace = FALSE)
+train_under_data = under_data[train_sub,]
+test_under_data = under_data[-train_sub,]
+train_under_y = train_under_data$Class
+train_under_x = subset(train_under_data,select = -c(Class))
+test_under_y = test_under_data$Class
+test_under_x = subset(test_under_data,select = -c(Class))
+cat("Après sous-échantillonnag :\n")
+cat("class0 : class1 dans l'ensemble d'apprentissage est ",
+    length(train_under_y[train_under_y==0]),":",length(train_under_y[train_under_y==1]),"\n")
+cat("class0 : class1 dans l'ensemble de test est ",
++     length(test_under_y[test_under_y==0]),":",length(test_under_y[test_under_y==1]))
+```
+
+## Sur-échantillonnage
+
+Générez le complément du plus petit nombre d'échantillons dans l'échantillon pour correspondre au plus grand. L'algorithme couramment utilisé est SMOTE.
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+data$Class = as.factor(data$Class)
+over_data = SMOTE(Class~., data, perc.over = 1000, perc.under = 100)
+train_sub = sample(nrow(over_data),floor(0.7*nrow(over_data)),replace = FALSE)
+train_over_data = over_data[train_sub,]
+test_over_data = over_data[-train_sub,]
+train_over_y = train_over_data$Class
+train_over_x = subset(train_over_data,select = -c(Class))
+test_over_y = test_over_data$Class
+test_over_x = subset(test_over_data,select = -c(Class))
+cat("Après sur-échantillonnag :\n")
+cat("class0 : class1 dans l'ensemble d'apprentissage est ",
+    length(train_over_y[train_over_y==0]),":",length(train_over_y[train_under_y==1]),"\n")
+cat("class0 : class1 dans l'ensemble de test est ",
++     length(test_over_y[test_over_y==0]),":",length(test_over_y[test_over_y==1]))
+```
+
+-----------------------------------------------------------------------------------------
+
+## Représentation graphique 
+
+Il est impossible de se représenter un espace à 30 dimensions et hormis la représentation des composantes principales, nous n'avons pas pu visualiser si les classes sont réellement séparées. De plus la représentation de l'ACP ne prend pas en compte ni le montant ni le temps. 
+Pour cela nous allons utiliser l'algorithme t-SNE qui est une technique de réduction de dimension pour la visualisation de données. L'algorithme t-SNE tente de trouver une configuration optimale selon un critère pour respecter les proximités entre points : deux points qui sont proches dans l'espace d'origine devront être proches dans l'espace de faible dimension.
+
+```{r}
+## Data
+data.tsne <- under_data
+
+## Colors for plotting
+colors = rainbow(length(unique(data.tsne$Class)))
+names(colors) = unique(data.tsne$Class)
+
+## Executing the algorithm on curated data
+tsne <- Rtsne(data.tsne, dims = 2, perplexity=50, verbose=TRUE, max_iter = 1000, check_duplicates = FALSE)
+
+## Plotting
+plot(tsne$Y, t='n', main="tsne")
+text(tsne$Y, labels=data.tsne$Class, col=colors[data.tsne$Class])
+```
+
+-----------------------------------------------------------------------------------------
+
+```{r, include=FALSE}
+source("fonctions.R")
+init_performance("Performances")
+```
+
+## Classification non-supervisé
+
+Premièrement, nous avons utilisé la méthode des k-voisins les plus proches pour explorer les données. Parce que les données de classe 0 et classe 1 coïncident fortement et qu’il existe un problème de déséquilibre extrême. Ainsi, lorsque on applique KNN à l'ensemble de données d'origine, les classes de prédiction renvoyées par l'algorithme sont toutes classes 0. Toutefois, lorsque l'algorithme est appliqué à l'ensemble de données après le sous-échantillonnage et le sur-échantillonnage, le modèle présente certaines performances. Mais la performance est très mauvaise. En ce qui concerne le paramètre k dans l’algorithme KNN, nous le fixons à 60 par validation croisée.
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+KNN(train_under_x,train_under_y,test_under_x,test_under_y,train_over_x,train_over_y,test_over_x,test_over_y)
+Performances
+```
+
+
+## Classification supervisé
+### LDA
+
+```{r, echo=FALSE}
+LDA(train_data,test_data,train_under_data,test_under_data,train_over_data,test_over_data)
+Performances
+```
+
+### QDA
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+QDA(train_data,test_data,train_under_data,test_under_data,train_over_data,test_over_data)
+Performances
+```
+
+
+### Naïve bayésienne
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+NB(train_data,test_data,train_under_data,test_under_data,train_over_data,test_over_data)
+Performances
+```
+
+### Logistique regression
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+LogReg(train_data,test_data,train_under_data,test_under_data,train_over_data,test_over_data)
+Performances
+```
+
+
+### SVM
+```{r}
+SVM(train_under_x,train_under_y,test_under_x,test_under_y,train_over_x,train_over_y,test_over_x,test_over_y)
+Performances
+```
+### Arbre de décision
+```{r}
+#voir les fonctions dans le fichier arbre.R
+```
+
+## Test
+Pour mieux évaluer les performances de chaque modèle, nous avons testé chaque modèle sur un ensemble de test non équilibré. En comparant les performances de chaque algorithme sur cet ensemble de tests, nous pouvons connaître dans une certaine mesure la capacité de généralisation du modèle, car le modèle obtenu avec l'ensemble de formation en sur-échantillonnage risque d'être sur-apprentissage.
+```{r}
+init_performance("Performances_test")
+
+pred <- predict(lda.model,newdata = test_data)
+Performances_test <- add_Performance("LDA",pred$class,test_y,Performance = Performances_test)
+pred <- predict(lda.under.model,newdata = test_data)
+Performances_test <- add_Performance("LDA-under",pred$class,test_y,Performance = Performances_test)
+pred <- predict(lda.over.model,newdata = test_data)
+Performances_test <- add_Performance("LDA-over",pred$class,test_y,Performance = Performances_test)
+
+pred <- predict(qda.model,newdata = test_data)
+Performances_test <- add_Performance("QDA",pred$class,test_y,Performance = Performances_test)
+pred <- predict(qda.under.model,newdata = test_data)
+Performances_test <- add_Performance("QDA-under",pred$class,test_y,Performance = Performances_test)
+pred <- predict(qda.over.model,newdata = test_data)
+Performances_test <- add_Performance("QDA-over",pred$class,test_y,Performance = Performances_test)
+
+pred <- predict(nb.model,newdata = test_data)
+Performances_test <- add_Performance("NB",pred,test_y,Performance = Performances_test)
+pred <- predict(nb.under.model,newdata = test_data)
+Performances_test <- add_Performance("NB-under",pred,test_y,Performance = Performances_test)
+pred <- predict(nb.over.model,newdata = test_data)
+Performances_test <- add_Performance("NB-over",pred,test_y,Performance = Performances_test)
+
+pred <- predict(logreg.model,newdata = test_data)
+pred[pred>0.5] = 1
+pred[pred<=0.5] = 0
+Performances_test <- add_Performance("LogReg",pred,test_y,Performance = Performances_test)
+pred <- predict(logreg.under.model,newdata = test_data)
+pred[pred>0.5] = 1
+pred[pred<=0.5] = 0
+Performances_test <- add_Performance("LogReg-under",pred,test_y,Performance = Performances_test)
+pred <- predict(logreg.over.model,newdata = test_data)
+pred[pred>0.5] = 1
+pred[pred<=0.5] = 0
+Performances_test <- add_Performance("LogReg-over",pred,test_y,Performance = Performances_test)
+
+#pred <- predict(svm.model,newdata = test_x)
+#Performances_test <- add_Performance("SVM",pred,test_y,Performance = Performances_test)
+pred <- predict(svm.under.model,newdata = test_x)
+Performances_test <- add_Performance("SVM-under",pred,test_y,Performance = Performances_test)
+pred <- predict(svm.over.model,newdata = test_x)
+Performances_test <- add_Performance("SVM-over",pred,test_y,Performance = Performances_test)
+
+#pred <- predict(tree.model,newdata = test_data,type = "class")
+#Performances_test <- add_Performance("DT",pred,test_y,Performance = Performances_test)
+#pred <- predict(tree.under.model,newdata = test_data,type = "class")
+#Performances_test <- add_Performance("DT-under",pred,test_y,Performance = Performances_test)
+#pred <- predict(tree.over.model,newdata = test_data,type = "class")
+#Performances_test <- add_Performance("DT-over",pred,test_y,Performance = Performances_test)
+
+#pred <- predict(bagging.model, newdata=test_x)
+#Performances_test <- add_Performance("Bagging",pred,test_y,Performance = Performances_test)
+#pred <- predict(bagging.under.model, newdata=test_x)
+#Performances_test <- add_Performance("Bagging-under",pred,test_y,Performance = Performances_test)
+#pred <- predict(bagging.over.model, newdata=test_x)
+#Performances_test <- add_Performance("Bagging-over",pred,test_y,Performance = Performances_test)
+
+#pred <- predict(RF.model, newdata=test_x)
+#Performances_test <- add_Performance("RF",pred,test_y,Performance = Performances_test)
+#pred <- predict(RF.under.model, newdata=test_x)
+#Performances_test <- add_Performance("RF-under",pred,test_y,Performance = Performances_test)
+#pred <- predict(bagging.over.model, newdata=test_x)
+#Performances_test <- add_Performance("RF-over",pred,test_y,Performance = Performances_test)
+
+rm(pred)
+print(Performances_test)
+```
+
+```{r}
+models = c("lda","lda under","lda over","qda","qda under","qda over","nb","nb under","nb over","logreg","logreg under","logreg over","svm","svm under","svm over","arbre decision","arbre decision under","arbre decision over","bagging","bagging under","bagging over","RF","RF under","RF over")
+
+barplot(Performances_test$precision,col=c("sandybrown","steelblue","steelblue","steelblue","steelblue","steelblue","steelblue", "steelblue","steelblue","sandybrown","steelblue","steelblue","sandybrown","steelblue","steelblue","sandybrown","steelblue","steelblue","sandybrown","steelblue","steelblue","sandybrown","steelblue","steelblue"),
+ylim=c(0,1),width=1,space=1,ylab="précision",las=1,main = "précision par différentes méthodes")
+text(x=seq(2,48,by=2),y=-0.002, srt = 30, adj = 1.1, labels = models,xpd = TRUE)
+abline(h=c(0,0.9))
+```
+```{r}
+barplot(Performances_test$recall,col=c("sandybrown","steelblue","steelblue","steelblue","steelblue","steelblue","steelblue", "steelblue","steelblue","sandybrown","steelblue","steelblue","sandybrown","steelblue","steelblue","sandybrown","steelblue","steelblue","sandybrown","steelblue","steelblue","sandybrown","steelblue","steelblue"),
+ylim=c(0,1),width=1,space=1,ylab="recall",las=1,main = "recall par différentes méthodes")
+text(x=seq(2,48,by=2),y=-0.002, srt = 30, adj = 1.1, labels = models,xpd = TRUE)
+abline(h=c(0,0.8))
+```
+
+```{r}
+barplot(Performances_test$accuracy,col=c("sandybrown","steelblue","steelblue","steelblue","steelblue","steelblue","steelblue", "steelblue","steelblue","sandybrown","steelblue","steelblue","sandybrown","steelblue","steelblue","sandybrown","steelblue","steelblue","sandybrown","steelblue","steelblue","sandybrown","steelblue","steelblue"),
+ylim=c(0,1),width=1,space=1,ylab="accuracy",las=1,main = "accuracy par différentes méthodes")
+text(x=seq(2,46,by=2),y=-0.002, srt = 30, adj = 1.1, labels = models,xpd = TRUE)
+abline(h=c(0,0.99))
+```
+
+De ce résultat, LDA et les arbres de décision ont donné les meilleurs résultats sur l’ensemble de tests. Ils ont un taux de rappel relativement élevé tout en ayant une précision relativement élevée. Le score F1 de ces deux algorithmes peut atteindre environ 0,8. C'est une bonne performance en algorithmes d'apprentissage machine. Du point de vue du taux de rappel, ces deux algorithmes peuvent détecter environ 80% des fraudes. Du point de vue de FPrate, la probabilité que ces deux algorithmes identifient une transaction normale comme une fraude est d'environ un sur mille. De même, nous examinons la régression logistique, qui a une grande précision, mais son taux de rappel est trop faible (seulement 59%).
+En comparant le tableau *Performances* avec le tableau *Performances-test*, nous avons constaté que le sous-échantillonnage et le sur-échantillonnage conduisaient à la sur-apprendissage.
+
+

@@ -1,0 +1,179 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+#### Objectif TD : Représentation euclidienne des données
+
+***
+
+>Rappel : 
+>
+>**ACP** : Permet de faire un changement de base pour concentrer les données autour des axes
+
+***
+
+#Exercice 1
+
+```{r}
+notes <- read.table("donnees/notes.txt", header=T)
+rownames(notes) <- c()
+dim(notes)
+head(notes)
+```
+
+Permet de représenter les individus par les valeurs des variables 1 et 2, et de les
+identifier en fonction du nom renseigné dans le data.frame :
+
+```{r}
+plot(math~scie, data=notes, pch=20, asp=1)
+text(notes[,c("math","scie")], row.names(notes), pos=1)
+```
+
+Si les données sont simplement définies par une matrice et non un data.frame, on pourra utiliser les
+instructions suivantes :
+`plot(notes[,c(i,j)], pch=20, asp=1)`
+`text(notes[,c(i,j)], row.names(notes), pos=1)`
+
+##Analyse des données
+On sait qu;il y a 5 matières : math, science, francais, latin et arts.
+
+###Répartions des notes 
+
+```{r}
+def.par <- par(no.readonly = T)
+title<- 
+par(mfrow = c(2, 3))
+for (i in 1:5) {
+  hist(notes[, i], main = names(notes)[i])
+}
+par(def.par)
+```
+
+
+```{r}
+boxplot(notes)
+```
+
+###Peut-on rapprocher certaines matières les unes des autres ? 
+
+```{r}
+cor(notes)
+```
+
+Ains les notes de :
+
+* Mathématiques et de Sciences sont très corrélées
+* Francais et de latin sont très corrélées
+* L'art semble etre une discipline à part (peu de corrélation avec les autres matières)
+
+##Analyse des groupes d'élèves
+
+###Représenter les élèves en fonction de leurs résultats dans les matières scientifiques 
+```{r}
+hist((notes$math+notes$scie)/2, main = "Moyenne des notes de mathématiques + science")
+```
+```{r}
+plot(notes$math+notes$scie~., data=notes, pch=20, asp=1)
+```
+
+
+#Projection et qualité de représentation 
+
+Il s'agit du principe principal de l'ACP. 
+
+***
+
+>**Rappel** 
+>
+> Base (libre + génératrice) : Nombre de vecteurs non-colinéraire 
+>
+> $\rightarrow$ Pivot de gauss
+>
+> Si on a A une base, et qu'on veut projeter une matrice X dans cette base on a $X' = X * (A^{-1})^T$
+
+> Orthogonale : produit scalaire de chaque colonne deux à deux = 0
+>
+>Si A orthonormé alors $A = (A^{-1})^T$
+
+***
+
+
+```{r}
+source("fonctions/distXY.r")
+source("fonctions/is.passage.r")
+source("fonctions/MatP.R")
+```
+
+```{r}
+head(notes)
+notesProj <- data.matrix(notes)%*%t(ginv(A1))
+notesProj
+```
+
+
+```{r}
+plot(notesProj[,1]~notesProj[,2], pch=20, asp=1)
+
+plot(notesProj[,1]~notesProj[,3], pch=20, asp=1)
+
+plot(notesProj[,2]~notesProj[,4], pch=20, asp=1)
+```
+
+On en conclu que cette projection est mauvaise et qu'on perd meme des informations par rapport à la base principale. 
+
+```{r}
+notesProj2 <- data.matrix(notes)%*%t(ginv(B1))
+notesProj2
+
+plot(notesProj2[,1]~notesProj2[,2], pch=20, asp=1)
+
+plot(notesProj2[,1]~notesProj2[,3], pch=20, asp=1)
+
+plot(notesProj2[,2]~notesProj2[,4], pch=20, asp=1)
+```
+
+Ca ne change pas vraiment. Ici 3 et 4 ne sont pas porteur d'informations, la variance est trop faible
+
+```{r}
+notesProj3 <- data.matrix(notes)%*%t(ginv(B2))
+notesProj3
+
+plot(notesProj3[,1]~notesProj3[,2], pch=20, asp=1)
+
+plot(notesProj3[,1]~notesProj3[,3], pch=20, asp=1)
+
+plot(notesProj3[,2]~notesProj3[,4], pch=20, asp=1)
+```
+
+
+#Choix d’une représentation
+
+On définit la qualité de la représentation selon un axe comme étant la quantité d’inertie expliquée
+par cet axe.
+
+>**Inertie**
+>
+>$I = (1/n)*\sum_{i} d^2(x_i,\mu) = (1/n)\sum_{i}\sum_{j} (x_j^i - \mu_j)^2$
+>
+> C'est égale à la trace de la matrice de covariance
+
+####Quelle est la quantité d’inertie du nuage de points expliquée par chacun des axes, si l’on considère la base canonique de R5 ? Quelle est la quantité d’inertie totale du nuage de points ?
+
+```{r}
+sum(diag(cov(notes)))
+sum(diag(cov(notesProj)))
+sum(diag(cov(notesProj2)))
+sum(diag(cov(notesProj3)))
+```
+
+Il ne faut pas que l'inertie entre la matrice de base et celle de la projection change. Sinon cela indique qu'on perd de l'information sur la repartition. Ici on constate que A1 le fait changer, c'est due au fait qu'elle ne soit pas orthonormé.
+
+
+####Quelle est la quantité d’inertie expliquée par les axes si l’on considère la base A1 ?
+
+####Qu’en est-il pour la base B1, pour la base B2 ?
+
+####On cherche à représenter le nuage de points dans un plan, au prix d’une perte d’information. Quels axes choisirait-on, parmi ceux définis par la base canonique, par B1, ou par B2 ? Pourquoi ? Interpréter.
+
+

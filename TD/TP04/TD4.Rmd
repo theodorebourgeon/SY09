@@ -1,0 +1,315 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+#### Objectif TD : Analyse en composantes principales
+
+***
+
+>Rappel : 
+>
+> Si on applique fonction eigen à la matrice de covariance, on obtient les vecteurs propres et les valeurs propres
+>
+> ANOVA : Est-ce que tous les correcteurs sont équivalents ou il y a-t-il des différences ? (mais n'explique pas cette différence --> on cherche soit un biais au niveau du correcteur ou due à l'effet de groupe) 
+
+***
+
+#Exercice 1
+## Analyse 
+
+Voir TD2
+
+## ACP à la main
+```{r}
+sy02 <- read.csv("donnees/sy02-p2016.csv", header = TRUE, na.strings="ABS")
+summary(sy02)
+head(sy02)
+sapply(sy02, class)
+
+sy02$niveau <- factor(sy02$niveau, levels = c("1","2","3","4","5","6"), ordered = T) 
+
+sy02$correcteur.median <- factor(sy02$correcteur.median, levels = unique(c(sy02$correcteur.median,sy02$correcteur.final))) 
+
+sy02$correcteur.final <- factor(sy02$correcteur.final, levels = unique(c(sy02$correcteur.median,sy02$correcteur.final))) 
+
+sy02$resultat <- factor(sy02$niveau, levels = c("A","B","C","D","E","Fx","F"), ordered = T) 
+
+sapply(sy02, class)
+```
+
+
+```{r}
+#Moyenne médian
+moy.median <- aggregate(note.median~correcteur.median, data=sy02, FUN=mean)
+names(moy.median) <- c("correcteur","moy.median")
+std.median <- aggregate(note.median~correcteur.median, data=sy02, FUN=sd)
+names(std.median) <- c("correcteur","std.median")
+median <- merge(moy.median, std.median)
+
+#Moyenne final
+moy.final <- aggregate(note.final~correcteur.final, data=sy02, FUN=mean)
+names(moy.final) <- c("correcteur","moy.final")
+std.final <- aggregate(note.final~correcteur.final, data=sy02, FUN=sd)
+names(std.final) <- c("correcteur","std.final")
+final <- merge(moy.final, std.final)
+
+#Merge
+correcteurs <- merge(median, final, all=T)
+
+#On retire les données manquantes
+corr.acp <- correcteurs[-c(2,8),]
+corr.acp <- as.data.frame(corr.acp)
+```
+On associera dans cet exercice les mêmes pondérations à tous les individus, et on munira $\mathbb{R}^p$ de la métrique euclidienne.
+
+1. Calculer les axes factoriels de l’ACP du nuage de points défini par les quatre variables quantitatives. Quels sont les pourcentages d’inertie expliquée par chacun de ces axes ?
+
+```{r}
+#Intertie = variance axe
+#% d'intertie d'un axe / par l'intertie totale
+inertieAxe1 <- var(corr.acp[,-1])[1,1]
+inertieAxe2 <- var(corr.acp[,-1])[2,2]
+inertieAxe3 <- var(corr.acp[,-1])[3,3]
+inertieAxe4 <- var(corr.acp[,-1])[4,4]
+total <- sum(diag((var(corr.acp[,-1]))))
+
+pourcent1 <- inertieAxe1/total
+pourcent1
+pourcent2 <- inertieAxe2/total
+pourcent2
+pourcent3 <- inertieAxe3/total
+pourcent3
+pourcent4 <- inertieAxe4/total
+pourcent4
+```
+Les deux premieres composantes comprennent 61 + 18 = 89% des informations
+
+
+2. Calculer les composantes principales ; en déduire la représentation des six individus dans le premier plan factoriel.
+
+```{r}
+#centrer valeur : scale ( , scale = FALSE) pour le pas reduire
+corr.acp[,-1] <- scale(corr.acp[,-1], scale = FALSE)
+
+#Matrice de covariance
+matCov <- cov(corr.acp[,-1])
+matCov
+
+#Calcul de la matrice de passage des vecteurs propres
+#$score --> valeurs propres
+#$vectors --> vecteurs propres
+U <- eigen(matCov)
+U
+#Somme des scores = inertie totale = somme des variances
+#Les vecteurs propres sont classé par ordre décroissant valeurs des valeurs propres
+
+C <-  as.matrix(corr.acp[,-1]) %*% U$vectors
+#Il s'agit de concentrer le plus de variance sur un axe --> Objectif de l'ACP
+
+#Pour representer les 6 individus dans le premier plan factoriel, il suffit de récupérer les deux premiers vecteurs (pour faire un plan) de la matrice C.
+plot(C[,2]~C[,1])
+```
+
+3. Tracer la représentation des quatre variables dans le premier plan factoriel.
+
+```{r}
+
+```
+
+4. Calculer l’expression $\sum_{\alpha=1}^k c_\alpha*u_\alpha^T$ pour les valeurs $k =$ 1; 2 et 3. À quoi correspond cette somme lorsque $k=$ 4 ?
+
+```{r}
+#TO DO
+```
+
+5. On souhaite représenter les individus initialement écartés de l’ACP. Remplacer chacune de leurs valeurs manquantes par la moyenne de la variable correspondante sur les données conservées, puis représenter ces individus dans les deux premiers plans factoriels.
+
+```{r}
+
+```
+
+#Exercice 2
+
+L’objectif de cet exercice est de se familiariser avec les fonctions R permettant d’effectuer une ACP, en particulier les fonctions princomp, summary, loadings, plot et biplot. Remarquons qu’il existe une autre fonction prcomp qui effectue les calculs de manière différente ; on ne l’utilisera pas ici.
+
+* En utilisant ces fonctions, effectuer l’ACP du jeu de données notes étudiées en cours. Montrer comment on peut retrouver tous les résultats alors obtenus (valeurs propres, axes principaux, composantes principales, représentations graphiques, ...).
+
+```{r}
+
+```
+
+* On s’intéresse à l’affichage des résultats de la fonction princomp. Qu’affichent les fonctions plot et biplot ? Détailler plus particulièrement le fonctionnement de la fonction biplot définie pour la classe princomp (accessible par biplot.princomp) et de ses différentes options.
+
+```{r}
+
+```
+
+#Exercice 3
+
+```{r}
+library(MASS)
+data("crabs")
+crabsquant <- cbind(crabs[,1],crabs[,4:8])
+head(crabsquant)
+
+```
+
+Toutes corrélées entre elles. Pourquoi ? Un grand crabe est grand partout et un petit crabe est petit partout --> variance tres concentré dans une seule dimension. L'ACP ne donne pas grand chose lorsque les données sont très corrélées entre elles. 
+Astuce : Il faut passer en donnée relative (on divise par la somme de chaque ligne par exemple, pour avoir un ratio. On ramene chaque crabe au crabe moyen --> différence relative de taille)
+
+Regarder fonction interaction 
+##Analyse
+
+1. Effectuer dans un premier temps une analyse descriptive des données. On s’interrogera notamment sur les différences de caractéristiques morphologiques, en particulier selon l’espèce ou le sexe : semble-t-il possible d’identifier l’une ou l’autre à partir d’une ou plusieurs caractéristiques morphologiques ?
+
+```{r}
+pairs(crabsquant, main = "Crabs species", pch = 21, bg = c("red","blue")[crabsquant$`crabs[, 1]`])
+```
+
+Non cela semble assez compliqué d'identifier l'une ou l'autre.
+
+2. Dans un second temps, on étudiera la corrélation entre les différentes variables. Quelle en est vraisemblablement la cause ? Quel traitement est-il possible d’appliquer aux données pour s’affranchir de ce phénomène ?
+
+```{r}
+cor(crabsquant[,2:6])
+```
+
+##ACP
+1. Tester tout d’abord l’ACP sur crabsquant sans traitement préalable. Que constatez-vous ? Comment pouvez-vous expliquer ce phénomène à la lumière de l’analyse exploratoire de ces données menée préalablement ?
+
+```{r}
+pca = princomp(crabsquant[,2:6])
+plot(pca)
+biplot(pca)
+```
+
+La taille du crabe conditionne tout le reste, c'est un facteur laten.
+
+2. Trouver une solution pour améliorer la qualité de votre représentation en termes de visualisation
+des différents groupes.
+
+Il faut passer en relatif : diviser toutes les variables par une autre (somme de chaque ligne par exemple)
+
+```{r}
+test <- crabsquant
+test <- cbind(test, crabs[,2])
+col <- interaction(test$`crabs[, 1]`,test$`crabs[, 2]`)
+test[,1] <- col
+test[,2] <- test[,2]/(test[,2]+test[,3]+test[,4]+test[,5]+test[,6])
+test[,3] <- test[,3]/(test[,2]+test[,3]+test[,4]+test[,5]+test[,6])
+test[,4] <- test[,4]/(test[,2]+test[,3]+test[,4]+test[,5]+test[,6])
+test[,5] <- test[,5]/(test[,2]+test[,3]+test[,4]+test[,5]+test[,6])
+test[,6] <- test[,6]/(test[,2]+test[,3]+test[,4]+test[,5]+test[,6])
+
+pairs(test, main = "Crabs by species and sex", pch = 21, bg = c("red","blue","green","yellow")[test[,1]])
+cor(test[,2:6])
+```
+
+```{r}
+pca = princomp(test[,2:6])
+plot(pca)
+biplot(pca)
+summary(pca)
+```
+
+
+#Exercice 4 
+
+```{r}
+pima <- read.csv("donnees/Pima.csv", header = TRUE)
+dim(pima)
+head(pima)
+pima$z <- factor(pima$z)
+```
+
+##Analyse
+### Analyse descriptive
+
+```{r}
+pairs(pima)
+```
+
+### Lien statostiques fort 
+
+```{r}
+cor(pima[1:7])
+```
+Lien fort entre skin et bmi --> 0,65
+
+```{r}
+plot(pima, col = pima$z)
+```
+
+## ACP
+
+```{r}
+pima.acp <- prcomp(pima[1:7])
+plot(pima.acp)
+
+library("factoextra")
+fviz_pca_var(pima.acp)
+fviz_pca_ind(pima.acp, col.ind =pima$z)
+```
+
+#Exercice 5 (AFTD)
+> AFTD
+>
+>Calcule une représentation multidimensionnelle, dans un espace euclidien de dimension p < n, de données se présentant sous la forme d'un tableau de dissimilarité entre n individus.
+
+```{r}
+mut <- read.csv("donnees/mutations2.csv", header = T, row.names = 1)
+mut <- as.dist(mut, diag = T, upper = T)
+```
+## Calculer une représentation euclidenne des données en $d = 2$ variables par AFTD.
+```{r}
+mut.aftd <- cmdscale(mut, k=2,eig = TRUE)
+mut.aftd$points
+mut.aftd$eig
+```
+Si tout positif --> possible de representer dans un espace euclidien.
+Négatif --> pas possible de le representer dans une espace euclidien.
+
+##L'afficher
+```{r}
+plot(mut.aftd$points)
+text(mut.aftd$points, labels = row.names(mut))
+```
+
+
+##Afficher le diagramme de shepard et qualité
+
+On s'attend à ce que ca match avec la droite y=x
+
+```{r}
+plot(Shepard(mut, mut.aftd$points))
+abline(0,1)
+```
+La distance n'est pas conservée.
+
+On  peut calculer la proportion d'inertie expliquée 
+```{r}
+explicMut <- mut.aftd$eig / sum(abs(mut.aftd$eig))
+plot(explicMut)
+```
+
+
+##K=3,4,5
+```{r}
+mut.aftd <- cmdscale(mut, k=3,eig = TRUE)
+mut.aftd$points
+mut.aftd$eig
+plot(Shepard(mut, mut.aftd$points))
+abline(0,1)
+```
+
+
+
+
+
+
+
+
+
+
+

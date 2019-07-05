@@ -1,0 +1,210 @@
+---
+title: "TD 5"
+output: html_notebook
+---
+
+#### Objectif TD : Classification automatique
+
+***
+
+>Rappel : 
+>
+
+***
+
+#Exercice 1 : Classification hiérarchique
+
+1. Effectuer la classification hiérarchique ascendante des données de Mutations (avec les différents critères d’agrégation disponibles). Commenter et comparer les résultats obtenus, en vous appuyant sur la représentation obtenue par AFTD. On pourra utiliser la fonction hclust.
+
+```{r}
+mut <- read.csv("donnees/mutations2.csv", header = TRUE, row.names = 1)
+dim(mut)
+summary(mut)
+mut.hclust <- hclust(dist(mut), method = "single")
+plot(mut.hclust)
+```
+Différentes méthodes de hclust : 
+
+* Single 
+* Complete 
+* Average
+* Ward.D
+* Ward.D2
+* Mcquitty
+* Median
+* Centroid
+
+On réprésente alors les 3 classes (k=3) principales trouvé par hclust par des couleurs dans le graphe de l'AFTD. On retrouve ainsi bien les trois clusters distincs trouvé par l'AFTD du TD4.
+
+```{r}
+a = cutree(mut.hclust, k=3)
+plot(mut.aftd$points, col = a)
+```
+
+
+2. Effectuer la classification hiérarchique ascendante des données Iris, après calcul des distances associées (on utilisera la fonction dist pour ce faire). Commenter les résultats obtenus, en vous appuyant sur votre connaissance de ce jeu de données.
+
+```{r}
+library(MASS)
+data(iris)
+dim(iris)
+unique(iris[,5])
+iris.hclust <- hclust(dist(iris[,-5]))
+plot(iris.hclust, labels = iris[,5])
+rect.hclust(iris.hclust,3)
+```
+```{r}
+a=cutree(iris.hclust,3)
+plot(iris, col=a)
+```
+
+```{r}
+iris.dist <- dist(iris[,-5])
+iris.aftd <- cmdscale(iris.dist, k=2,eig = TRUE)
+a=cutree(iris.hclust,3)
+plot(iris.aftd$points, col = a)
+```
+
+3. Effectuer la classification hiérarchique descendante des données Iris, au moyen de la fonction diana (bibliothèque cluster). Comparer aux résultats obtenus au moyen de la CAH.
+
+```{r}
+library(cluster)
+iris.diana <- diana(dist(iris[,-5]))
+plot(iris.diana, labels = iris[,5])
+rect.hclust(iris.diana ,3)
+col=cutree(iris.diana,3)
+plot(iris, col=col)
+plot(iris.aftd$points, col = col)
+```
+
+>**Remarque importante :** dans les anciennes versions de R, il faut élever les distances au carré avant d’effectuer une CAH via la fonction hclust avec le critère de Ward (lorsque celui-ci a un sens : tableau de distances euclidiennes). Dans les versions les plus récentes, il existe deux critères : ward.D et ward.D2 ; on choisira le second (ward.D2) qui implémente le critère de Ward.
+
+
+#Exercice 2 : Méthode des centres mobiles (K-means) 
+
+Le but de cet exercice est de tester les performances de l’algorithme des centres mobiles sur trois jeux de données réelles : Iris, Crabs et Mutations. Sauf précision, on traitera les données complètes ; on pourra représenter cette classification obtenue sur les données complètes en utilisant une représentation des données dans le premier plan factoriel.
+
+##Données Iris
+
+1. Tenter une partition en $k \in \{2,3,4\}$ classes avec la fonction kmeans ; visualiser et commenter.
+
+```{r}
+iris.kmeans2 <- kmeans(iris[,-5], centers = 2)
+iris.kmeans3 <- kmeans(iris[,-5], centers = 3)
+iris.kmeans4 <- kmeans(iris[,-5], centers = 4)
+par(mfrow=c(3,1))
+plot(iris.aftd$points, col=iris.kmeans2$cluster)
+plot(iris.aftd$points, col=iris.kmeans3$cluster)
+plot(iris.aftd$points, col=iris.kmeans4$cluster)
+```
+
+2. On cherche à présent à étudier la stabilité du résultat de la partition. Effectuer plusieurs classifications des données en K = 3 classes. Observer les résultats, en termes de partition et d’inertie intra-classes. Ces résultats sont-ils toujours les mêmes ? Commenter et interpréter.
+
+```{r}
+iris.kmeans3.restart100 <- kmeans(iris[,-5], centers = 3, nstart = 10000)
+plot(iris.aftd$points, col=iris.kmeans3.restart100$cluster)
+iris.kmeans3$tot.withinss
+iris.kmeans3$withinss
+```
+
+Kmeans calcule tout, l'inertie intra et inter : 
+
+Within cluster sum of squares by cluster:
+[1] 15.15100 39.82097 23.87947
+ (between_SS / total_SS =  88.4 %)
+ 
+ 
+3. On cherche à déterminer le nombre de classes optimal.
+
+Effectuer N = 100 classifications en prenant K = 2 classes ; puis à nouveau N = 100 classifications en K = 3 classes, K = 4 classes,... jusqu’à K = 10 classes. On pourra faire deux boucles imbriquées pour cela. Pour chaque valeur de K, calculer l’inertie intra-classe minimale (sur les 100 répétitions). Représenter la variation d’inertie minimale en fonction de K. On inclura à ce graphique l’inertie totale (assimilable à l’inertie intra-classe pour K = 1). Proposer un nombre de classes à partir de ces informations, en utilisant la méthode du coude.
+
+```{r}
+res <- kmeans(iris[,-5], centers = 1, nstart = 100)$tot.withinss
+for(i in (2:10)){
+  iris.kmeans <- kmeans(iris[,-5], centers = i)
+  iris.tot.withinss <- iris.kmeans$tot.withinss
+  for(k in (2:100))
+  {
+    iris.kmeans <- kmeans(iris[,-5], centers = i)
+    iris.tot.withinss <- cbind(iris.tot.withinss, iris.kmeans$tot.withinss)
+  }
+  res <- cbind(res, min(iris.tot.withinss))
+}
+plot((1:10),res)
+abline(v=3)
+```
+
+
+4. Comparer les résultats de la partition obtenue par les centres mobiles avec la partition réelle des iris en trois groupes : quels individus sont placés dans le mauvais cluster ? Pourquoi ?
+
+```{r}
+
+```
+
+
+## Données Crabs
+1. Effectuer plusieurs classifications en K = 2 classes des données Crabs pré-traitées de manière à supprimer l’effet taille. Les résultats obtenus sont-ils toujours les mêmes d’une classification à l’autre ? À quoi sont dues les différences observées ?
+
+```{r}
+
+```
+
+2. Effectuer plusieurs classifications des données en K = 3 classes. Ici encore, qu’observe-t-on ?
+
+```{r}
+
+```
+
+3. Effectuer une classification en K = 4 classes des données. Comparer à la partition réelle
+suivant l’espèce et le sexe. Que peut-on conclure ?
+
+```{r}
+
+```
+
+## Données Mutations
+
+On calculera tout d’abord une représentation des données mutations (tableau individus-variables) dans un espace de dimension d = 5. On utilisera par la suite la fonction kmeans sur ces données.
+
+1. Effectuer plusieurs classifications de cette représentation en K = 3 classes au moyen de
+l’algorithme des centres mobiles. On pourra représenter les résultats obtenus dans le premier plan factoriel de l’AFTD.
+
+```{r}
+
+```
+
+2. Étudier la stabilité du résultat de la partition. Commenter et interpréter.
+
+```{r}
+
+```
+
+# Exerciec 3 : Convergence des K-means
+
+On cherche ici à montrer que l’algorithme des K-means peut être interprété comme une procédure
+de minimisation alternée qui répète deux étapes :
+— le calcul d’un représentant pour chaque groupe,
+— le calcul d’une affectation des points à chacun des groupes.
+
+1. On définit une affectation comme un ensemble de variables indicatrices zik P t0; 1u, pour touti  1; : : : ; n et k  1; : : : ;K, telles que k zik  1 (une seule est non nulle). Exprimer le critère d’inertie optimisé par l’algorithme des K-means en fonction de ces variables d’affectation zi et des représentants des groupes k.
+
+```{r}
+
+```
+
+2. On suppose disposer d’une affectation z1; : : : ; zn. Montrer que pour un groupe, le centre de gravité est le représentant qui minimise le critère d’inertie.
+
+```{r}
+
+```
+
+3. Étant donné des centres 1; : : : ;k, montrer que l’affectation de chaque point au centre le plus proche minimise le critère d’inertie.
+
+```{r}
+
+```
+
+
+
+
+

@@ -1,0 +1,159 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+####Objectif TD : Analyse exploratoire
+
+>Rappel : 
+>
+>####Univarié
+>Test d'adéquation pour savoir si suit une loi.
+>
+>####Bivarié
+>* Comparaison de moyenne Student
+>* Test d'independance Chi-square
+
+#Exercice 1
+
+
+```{r}
+load("../TP01/donnees/iris.Rdata")
+```
+
+```{r}
+data(iris)
+class(iris)
+names(iris)
+iris[, 1]
+iris$Sepal.Length
+class(iris[, 1])
+class(iris$Species)
+summary(iris)
+apply(iris[, 1:4], 2, mean)
+cor(iris[, 1:4])
+print(cor(iris[, 1:4]), digits = 3)
+plot(iris)
+boxplot(iris)
+```
+Afficher plusieurs graphiques sur la même fenêtre.
+
+Transformer especes en dummy variables ? 
+```{r}
+setosa <- iris[iris$Species == "setosa",]
+versicolor <- iris[iris$Species == "versicolor",]
+virginica <- iris[iris$Species == "virginica",]
+```
+Pas besoin, ici as.numeric le fait comme il faut. 
+```{r}
+as.numeric(iris$Species)
+```
+
+```{r}
+def.par <- par(no.readonly = T)
+par(mfrow = c(2, 2))
+for (i in 2:5) {
+  hist(iris[, i])
+}
+par(def.par)
+```
+
+```{r}
+barplot(summary(iris$Species))
+```
+Cette commande effectue une graphique en baton sur l'effectif de chaque especes d'iris. 
+
+```{r}
+quartz() # ou x11()
+plot(iris[, 1:4], col = c("red", "green", "blue")[iris$Species])
+quartz() # ou x11()
+pairs(iris[, 1:4], main = "Iris de Fisher", pch = 21, bg = c("red", "green3","blue")[iris$Species])
+```
+>**Premières conclusions**
+>
+>Il semblerait qu'il existe des correlations lineaires entre la longueur des petales et leur largeur.
+>
+>De plus, le ratio des caracteristiques sur les sepals par celle sur les petales donne une indication forte sur l'appartenant d'une classe par rapoort au 2 autres. (ici la rouge)
+>
+>D'autre part, le ratio de la longueur des petales par les sepales des especes bleus et vertes caracterises bien les deux especes restantes.
+
+
+```{r}
+attach(iris)
+# Histogrammes avec les espèces en fonction de la taille des pétales
+inter <- seq(min(Petal.Length), max(Petal.Length), by = (max(Petal.Length) - min(Petal.Length))/10)
+h1 <- hist(plot = F, Petal.Length[Species == "setosa"], breaks = inter)
+h2 <- hist(plot = F, Petal.Length[Species == "versicolor"], breaks = inter)
+h3 <- hist(plot = F, Petal.Length[Species == "virginica"], breaks = inter)
+barplot(rbind(h1$counts, h2$counts, h3$counts), space = 0, legend =levels(Species), main = "LoPe", col = c("blue", "red", "yellow"))
+```
+```{r}
+# Graphique sur un fichier Postscript
+postscript("exemple.eps", horizontal = F, width = 12/2.5, height = 12/2.5)
+pairs(iris[1:4], main = "Les Iris", pch = 21, bg = c("red", "green3","blue")[Species])
+dev.off()
+detach(iris)
+```
+
+```{r}
+hist.factor <- function (x,y) {
+  rh <- c()
+  inter <- seq(min(x), max(x), by = (max(x)-min(x))/10)
+  k <- 1
+  for (i in unique(y)){
+    h <- hist(plot = F, x[y == i], breaks = inter)
+    rh <- rbind(rh, h$counts)
+    k <- k+1
+  }
+  barplot(rh, space = 0)
+}
+hist.factor(iris$Petal.Length, iris$Species)
+```
+
+#Exercice 2 
+
+>**Test du Chi2** 
+>
+>Voir si deux variables sont indépendantes
+>Est-il raisonnable de penser que les proportions observés sont proche du produit de la fréquence d'apparition de chaque observation pixpj ? 
+
+On utilise `na.strings="ABS"` pour importer les données avec les valeurs initilement en ABS en NA.
+
+```{r}
+median <- read.csv("donnees/median-sy02-p2014.csv", header = FALSE, na.strings="ABS")
+median
+```
+```{r}
+data <- median[!is.na(median$V2),]
+data
+```
+```{r}
+data$V1 <- substr(data$V1,1,2)
+data$V1 <- as.factor(data$V1)
+data
+```
+On essaye de voir si la branche à une influence sur les résultats.
+
+```{r}
+barplot(summary(data$V1))
+boxplot(data$V2~data$V1)
+```
+Confirmation par le test du chi2 
+
+```{r}
+chisq.test(hist.factor(data$V2,data$V1))
+```
+Il semblerait donc qu'on accepte l'hypothese ($p_{value}$ = 0.05715) d'independance ($H_0$) des branches sur les notes.
+
+Pour comparer les notes entre les etudiants de GI et GP, on effectue une comparaison de moyenne par le test de Student.
+```{r}
+t.test(data$V2[data$V1 == 'GI'],data$V2[data$V1 == 'GP'])
+```
+Il semblerait donc qu'on rejette l'hypothese ($p_{value}$ = 0.02834) d'égalité des moyennes ($H_0$) des branches GI et GP. Les différences de notes sont significatives. 
+
+#Exercice 3 
+
+```{r}
+data <- read.table("donnees/babies23.data")
+```
+

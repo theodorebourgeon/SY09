@@ -1,0 +1,139 @@
+---
+title: "TD 6"
+output: html_notebook
+---
+
+#### Objectif TD : Classification automatique
+
+***
+
+>Rappel : 
+> kmeans 
+>
+> Critère optimisé = minimise l'inertie intra-classe
+>
+> Inertie totale = intertie intra + inter
+>
+> Optimisation de $K*p$ parametres pour une recherche de K classes
+
+***
+
+# Introduction 
+
+**Distance de Mahalanobis** : Prise en compte de la dispersion des points intra-classes 
+
+On normalise la matrice de covariance pour eviter la solution triviale d'une classe hyper dilatée et des points uniques dans les autres classes. Ce qui numériquement est correcte, inertie pas trop forte mais qulitativement nulle. 
+
+Cout à payer $\rightarrow$ Calcul de la matrice de covariance $p*(p+1)/2$ 
+
+Attention, si on a moins d'individu que de parametre: 
+
+* Colonne de la matrice de covariance combinaison linéaire des autres
+* Valeur propre matrice nulle
+* Normalement impossible à inverser, mais en R : 1/0 = Nan 
+* Erreur estimation paramètre
+
+# Programmation 
+
+```{r}
+source("fonctions/distXY.r")
+
+adapkm <- function(X, K=2, rhok = rep(1,K), iter.max=100, nstart=1, epsi=1e-5) {
+  X <- as.matrix(X)
+  n <- dim(X)[1]
+  p <- dim(X)[2]
+  best.dtot <- Inf
+
+  for (iess in 1:nstart) {
+    # Initialisation : utilisation de la distance euclidienne 
+    muk <- X[sample(1:n,K),]
+    Sig <- array(rep(diag(rep(1,p)+1e-5),K), dim=c(p,p,K))
+    diff <- epsi+1
+    iter <- 0
+    Vk <- rhok**(-1/p)*diag(1,p)
+    VkNorm <- (rhok*det(Vk)**(-1/p)) %*% Vk
+    
+    while ((diff>epsi)&(iter<=iter.max)) {
+      iter <- iter+1
+      dMah <- matrix(0, nrow=n, ncol=K)
+      
+      for (k in 1:K) {
+        dMah[,k] <- distXY(X, muk[k,], inv(VkNorm))
+      }
+
+      clus <- apply(dMah, 1, which.min)
+      mukold <- muk
+        
+      for (k in 1:K) {
+        muk[k,] <-  clus
+        Sig[,,k] <- cov.wt(X[which(clus==k),],method = "ML")$cov
+        # Régularisation (Modifier la diagonale que l'inversion se passe dans la meilleur des conditions)
+        Sig[,,k] <- Sig[,,k] + diag(p)*1e-5*mean(diag(Sig[,,k]))
+        # Normalisation 
+        Sig[,,k] <- (rhok*det(Vk)**(-1/p)) %*% Vk
+      }
+
+      dtot <- 0
+      for (k in 1:K) {
+        dtot <- dtot + distXY(X[which(clus==k),], muk[k,], inv(Sig[,,k]))
+      }
+
+      diff <- sum(dist(muk,mukold))
+    }
+
+    if (dtot<best.dtot)
+    {
+      best.dtot <- dtot
+      best.iter <- iter
+      best.clus <- clus
+      best.muk <- muk
+      best.Sig <- Sig
+    }
+  }
+
+  outp <- NULL
+  outp$dtot <- best.dtot
+  outp$iter <- best.iter
+  outp$cluster <- best.clus
+  outp$centers <- best.muk
+  outp$MatCov <- best.Sig
+  outp
+}
+```
+
+# Applications
+
+## Données synthétiques 
+
+### Donnees/Synth1.csv
+```{r}
+X <- read.csv("donnees/Synth1.csv", header = T, row.names = 1)
+dim(X)
+z <- X[,3]
+X <- X[,-3]
+
+res <- kmeans(X, centers = 1, nstart = 100)$tot.withinss
+for(i in (2:10)){
+  data.kmeans <- kmeans(X, centers = i)
+  data.tot.withinss <- data.kmeans$tot.withinss
+  for(k in (2:100))
+  {
+    data.kmeans <- kmeans(X, centers = i)
+    data.tot.withinss <- cbind(data.tot.withinss, data.kmeans$tot.withinss)
+  }
+  res <- cbind(res, min(data.tot.withinss))
+}
+plot((1:10),res)
+```
+```{r}
+library(matlib)
+adapkm(X, 2, rep(1,2), 100,1, 1e-5)
+```
+
+## Données réelles 
+
+```{r}
+
+```
+
+

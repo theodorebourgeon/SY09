@@ -1,0 +1,392 @@
+---
+title: "TD 7"
+output: html_notebook
+---
+
+#### Objectif TD : Méthode des K plus proches voisins
+
+On souhaite utiliser l’algorithme des K plus proches voisins sur différents jeux de données, à des
+fins de discrimination. On complétera tout d’abord les fonctions fournies, puis on les testera sur des
+données synthétiques (générées selon une distribution prédéfinie) puis réelles.
+
+***
+
+# Méthode des K plus proches voisins 
+
+On rappelle que la méthode des K plus proches voisins ne nécessite pas de phase d’apprentissage à
+proprement parler. On considérera les deux fonctions: 
+
+* **kppv.val** qui permet de calculer les classes
+f(x1), f(x2),..., f(xm) prédites pour chacun des m individus de test x1,x2,...,xm 
+* **kppv.tune** qui doit permettre de trouver la valeur de K donnant les meilleurs résultats sur un
+ensemble de données.
+
+## 1. Implémentation
+
+### Fonction kppv.val
+Analyser la fonction kppv.val : comment fonctionne-t-elle ? Comment la sortie est-elle déterminée ?
+Quelle information pourrait-on retourner en plus du classement des individus de test ?
+
+```{r}
+kppv.val <- function(Xapp, zapp, K, Xtst)
+{
+	Xapp <- as.matrix(Xapp)
+	Xtst <- as.matrix(Xtst)
+
+	napp <- dim(Xapp)[1]
+	ntst <- dim(Xtst)[1]
+	p <- dim(Xapp)[2]
+
+	# calcul des distances 
+	d2 <- distXY(Xtst, Xapp)
+	d2sor <- t(apply(d2, 1, sort))
+
+	# distance seuil pour chaque individu de l'ensemble 
+	# de test (distance a son Kieme plus proche voisin) 
+	seuil <- d2sor[,K]
+
+	# identification des plus proches voisins 
+	is.ppv <- (d2<=matrix(rep(seuil,napp),nrow=ntst,byrow=F))
+
+  # valeur de f pour les K plus proches voisins
+  z.kppv <- matrix(rep(as.numeric(zapp),ntst),nrow=ntst,byrow=T)*is.ppv
+
+  g <- nlevels(zapp)
+  scores <- matrix(0,nrow=ntst,ncol=g)
+  for (k in 1:g)
+	{
+		scores[,k] <- apply(z.kppv==k,1,sum)
+  }
+
+  # classement dans la classe majoritaire 
+  zpred <- as.factor(apply(scores, 1, which.max))
+}
+```
+
+
+Calcul des distance à tous les points d'un ensemble de points de test, ordonnacement et selection des K plus proche voisins. Repérage de la classe majoritaire des plus proches voisins et classification. Renvoi vecteur des classes choisies.
+
+### Fonction kppv.tune
+
+Compléter la fonction kppv.tune, qui doit déterminer le nombre « optimal » de voisins Kopt (choisi
+parmi un vecteur nppv de valeurs possibles), c’est-à-dire donnant les meilleurs performances sur un
+ensemble de validation étiqueté (tableau individus-variables Xval de dimensions $nval * p$ ; et vecteur
+zval de sorties associées, de longueur nval).
+
+La fonction prend donc en entrée :
+
+
+* les données utilisées pour faire le classement : tableau individus-variables Xapp et vecteur
+zapp des étiquettes associées ;
+*  le tableau individus-variables Xval et le vecteur zval à utiliser pour la validation ;
+*  un ensemble de valeurs nppv correspondant aux différents nombres de voisins à tester.
+
+
+Elle retourne la valeur Kopt choisie dans l’ensemble nppv et donnant les meilleurs résultats sur Xval.
+
+```{r}
+kppv.tune <- function(Xapp, zapp, Xval, zval, nppv)
+{
+	taux <- rep(0,length(nppv))
+
+	for (k in nppv)
+	{
+	  pred <- kppv.val(Xapp, as.factor(zapp), k, Xval)
+	  errRate <- 0
+	  for(i in length(zval)){
+	    if(pred[i]!=zval[i]){
+	      errRate = errRate + 1
+	    }
+	  }
+    taux[k] <- errRate/length(zval)
+	}
+
+  Kopt <- which.min(taux)
+  Kopt
+}
+
+```
+
+## Sélection de modèle et évaluation des performances
+
+Pour un jeu de données, on séparera aléatoirement l’ensemble des données disponibles, de manière
+à former un ensemble d’apprentissage et un ensemble de test (et éventuellement un ensemble de 1
+validation si nécessaire). L’ensemble d’apprentissage est réservé à l’apprentissage du modèle uniquement
+(s’il y a lieu, on optimisera les hyper-paramètres sur l’ensemble de validation ou via une
+procédure spécifique) ; et l’ensemble de test n’est utilisé que pour l’estimation des performances.
+
+*Remarque 1* :  Dans certains cas, pour obtenir une estimation plus robuste des performances du
+modèle, on pourra répéter les étapes de séparation des données disponibles, apprentissage du modèle
+et estimation des performances (taux d’erreur de prédiction) par un taux d’erreur moyen ou médian.
+Il est parfois de coutume de calculer en plus un intervalle de confiance ou un diagramme en boîte à
+partir de ces données. Or, si la moyenne des taux d’erreur empiriques est un estimateur sans biais
+du taux d’erreur espéré du classifieur, ce n’est pas le cas de sa variance empirique (ou de la variance
+empirique corrigée) : les différents ensembles d’apprentissage (ou de test) obtenus par séparation des
+données ne sont pas distincts, un même individu pouvant être présent dans plusieurs ensembles.
+De ce fait, les taux d’erreur moyens calculés au cours de ces expériences répétées ne sont pas indépendants.
+
+S’il est rigoureux d’utiliser leur moyenne pour estimer le risque, utiliser des intervalles de
+confiance ou des diagrammes en boîte pour comparer les performances de plusieurs modèles peut au
+contraire mener à des conclusions erronées, du fait du biais des estimations utilisées.
+
+### Questions
+#### Jeux de données synthétiques
+On dispose de cinq jeux de données (téléchargeables sur le site de l’UV) : Synth1-40, Synth1-100,
+Synth1-500, et Synth1-1000.Pour chacun de ces jeux de données, les classes ont été générées suivant
+des lois normales bivariées, identiques et de mêmes proportions pour tous les jeux de données :
+Synth1-40, Synth1-100, Synth1-500 et Synth1-1000 diffèrent ainsi essentiellement par le nombre
+d’observations.
+
+##### 1. Pour chacun des jeux de données, estimer les paramètres $\mu_k$k et $\sum_k$ des distributions conditionnelles, ainsi que les proportions $\pi_k$ des classes.
+
+```{r}
+data40 <- read.csv("donnees/Synth1-40.csv", header = TRUE)
+summary(data40)
+unique(data40$z)
+data40.cl1.prop <- dim(data40[data40$z == 1,])[1]/dim(data40)[1]
+data40.cl2.prop <- 1 - data40.cl1.prop
+data40.cl1.prop
+data40.cl2.prop
+cov(data40[1:2])
+
+data100 <- read.csv("donnees/Synth1-100.csv")
+summary(data100)
+unique(data100$z)
+data100.cl1.prop <- dim(data100[data100$z == 1,])[1]/dim(data100)[1]
+data100.cl2.prop <- 1 - data100.cl1.prop
+data100.cl1.prop
+data100.cl2.prop
+cov(data100[1:2])
+
+data500 <- read.csv("donnees/Synth1-500.csv")
+summary(data500)
+unique(data500$z)
+data500.cl1.prop <- dim(data500[data500$z == 1,])[1]/dim(data500)[1]
+data500.cl2.prop <- 1 - data500.cl1.prop
+data500.cl1.prop
+data500.cl2.prop
+cov(data500[1:2])
+
+data1000 <- read.csv("donnees/Synth1-1000.csv")
+summary(data1000)
+unique(data1000$z)
+data1000.cl1.prop <- dim(data1000[data1000$z == 1,])[1]/dim(data1000)[1]
+data1000.cl2.prop <- 1 - data1000.cl1.prop
+data1000.cl1.prop
+data1000.cl2.prop
+cov(data1000[1:2])
+```
+
+##### 2. Effectuer une séparation aléatoire de l’ensemble de données en un ensemble d’apprentissage
+et un ensemble de test (on pourra utiliser la fonction separ1). Déterminer le nombre optimal
+de voisins à l’aide de la fonction kppv.tune, en utilisant l’ensemble d’apprentissage comme
+ensemble de validation. Quel est le nombre optimal de voisins déterminé ? Pourquoi ?
+
+```{r}
+separ1 <- function(X, z)
+{
+	ntot <- dim(X)[1]
+
+	iapp <- sample(1:ntot, round(2/3*ntot))
+	itst <- setdiff(1:ntot, iapp)
+
+	Xapp <- X[iapp,]
+	zapp <- z[iapp]
+	Xtst <- X[itst,]
+	ztst <- z[itst]
+
+	out <- NULL
+	out$Xapp <- Xapp
+	out$zapp <- zapp
+	out$Xtst <- Xtst
+	out$ztst <- ztst
+
+	out
+}
+
+```
+
+```{r}
+front.kppv <- function(X, z, K, discretisation=50)
+{
+    deltaX <- (max(X[,1])-min(X[,1]))/discretisation
+    deltaY <- (max(X[,2])-min(X[,2]))/discretisation
+    minX <- min(X[,1])-deltaX
+    maxX <- max(X[,1])+deltaX
+    minY <- min(X[,2])-deltaY
+    maxY <- max(X[,2])+deltaY
+  
+    # grille d'affichage 
+    grilleX <- seq(from=minX,to=maxX,by=deltaX)
+    naffX <- length(grilleX)
+    grilleY <- seq(from=minY,to=maxY,by=deltaY)
+    naffY <- length(grilleY)
+    grille <- cbind(rep.int(grilleX,times=rep(naffY,naffX)),rep(grilleY,naffX))
+  
+    # calcul des valeurs de la fonction 
+    valf <- kppv.val(X, z, K, grille)
+    plot(X, col=c("red","green","blue","magenta","orange")[z], asp=1)
+    contour(grilleX, grilleY, matrix(as.numeric(valf),nrow=naffX,byrow=T), add=T, drawlabels=FALSE, levels=1.5)
+}
+```
+
+```{r}
+data40sep <- separ1(data40[1:2],data40[,3])
+Kopt40 <- kppv.tune(data40sep$Xapp, as.factor(data40sep$zapp), data40sep$Xapp, data40sep$zapp, seq(from=1,to=11,by=2))
+Kopt40
+front.kppv(data40sep$Xapp, as.factor(data40sep$zapp), Kopt40, 100)
+
+data100sep <- separ1(data100[1:2],data100[,3])
+Kopt100 <- kppv.tune(data100sep$Xapp, as.factor(data100sep$zapp), data100sep$Xapp, data100sep$zapp, seq(from=1,to=11,by=2))
+Kopt100
+front.kppv(data100sep$Xapp, as.factor(data100sep$zapp), Kopt100, 100)
+
+data500sep <- separ1(data500[1:2],data500[,3])
+Kopt500 <- kppv.tune(data500sep$Xapp, as.factor(data500sep$zapp), data500sep$Xapp, data500sep$zapp, seq(from=1,to=11,by=2))
+Kopt500
+front.kppv(data500sep$Xapp, as.factor(data500sep$zapp), Kopt500, 100)
+
+data1000sep <- separ1(data1000[1:2],data1000[,3])
+Kopt1000 <- kppv.tune(data1000sep$Xapp, as.factor(data1000sep$zapp), data1000sep$Xapp, data1000sep$zapp, seq(from=1,to=11,by=2))
+Kopt1000
+front.kppv(data1000sep$Xapp, as.factor(data1000sep$zapp), Kopt1000, 100)
+```
+Si on utilise l'ensemble d'apprentissage comme ensemble de validation, le nombre optimal est forcément 1 --> sur-apprentissage.
+
+##### 3. Écrire un script qui effectue N = 20 séparations aléatoires du jeu de données Synth1-1000 en
+ensembles d’apprentissage, de validation, et de test (on pourra utiliser la fonction separ2) ;
+et qui, pour chacune :
+
+* D’une part, détermine (et stocke) le nombre optimal de voisins Kopt ;
+* D’autre part, calcule (et stocke) les taux d’erreur d’apprentissage, de validation et de
+test pour différentes valeurs de K (les mêmes que celles testées pour déterminer Kopt).
+
+
+```{r}
+separ2 <- function(X, z)
+{
+  ntot <- dim(X)[1]
+
+  iapp <- sample(1:ntot, round(1/2*ntot))
+  ival <- sample(setdiff(1:ntot,iapp), round(1/4*ntot))
+  itst <- setdiff(1:ntot, c(iapp,ival))
+
+  Xapp <- X[iapp,]
+  zapp <- z[iapp]
+  Xval <- X[ival,]
+  zval <- z[ival]
+  Xtst <- X[itst,]
+  ztst <- z[itst]
+
+  out <- NULL
+  out$Xapp <- Xapp
+  out$zapp <- zapp
+  out$Xval <- Xval
+  out$zval <- zval
+  out$Xtst <- Xtst
+  out$ztst <- ztst
+
+  out
+}
+```
+
+```{r}
+KOPT <- rep(0, 20)
+ERRAPPR <- rep(0, 20)
+ERRVAL <- rep(0, 20)
+ERRTEST <- rep(0, 20)
+for (k in (1:20)){
+  datasep <- separ2(data1000[,1:2],data1000[,3])
+  KOPT[k] <- kppv.tune(datasep$Xapp, as.factor(datasep$zapp), datasep$Xval, datasep$zval, seq(from=1,to=20,by=1))
+  
+  pred <- kppv.val(datasep$Xapp, as.factor(datasep$zapp), KOPT[k], datasep$zval)
+  errRate <- 0
+  for(i in length(datasep$zapp)){
+    if(pred[i]!=datasep$zapp[i]){
+      errRate = errRate + 1
+    }
+  }
+  ERRAPPR[k] <- errRate/length(datasep$zapp)
+  
+  pred2 <- kppv.val(datasep$Xapp, as.factor(datasep$zapp), KOPT[k], datasep$ztst)
+  errRate2 <- 0
+  for(i in length(datasep$zapp)){
+    if(pred2[i]!=datasep$zapp[i]){
+      errRate2 = errRate2 + 1
+    }
+  }
+  ERRVAL[k] <- errRate2/length(datasep$ztst)
+}
+
+plot(KOPT)
+plot(ERRAPPR)
+plot(ERRVAL)
+```
+
+Représenter les taux d’erreur d’apprentissage, de validation et de test. L’estimation du nombre
+optimal de voisins semble-t-elle stable ? Pourquoi ?
+```{r}
+
+```
+
+
+#### Jeux de données réelles
+
+On considère maintenant les jeux de données Pima et Breastcancer. Traiter ces jeux de données
+suivant le protocole utilisés sur les données synthétiques. Calculer les estimations de $\epsilon$ sur l’ensemble d’apprentissage et sur l’ensemble de test. Commenter et interpréter les résultats obtenus.
+
+```{r}
+
+```
+
+***
+
+## 2. Méthode des « K plus proches prototypes »
+
+La méthode des K plus proches voisins présente des propriétés intéressantes, mais cette stratégie
+reste coûteuse : elle nécessite, en phase de test, de calculer la distance entre chaque individu de 2
+test et tous les individus d’apprentissage. On souhaite ici en tester une variante, dans laquelle l’ensemble
+d’apprentissage sera résumé par un ensemble de points caractéristiques que nous appellerons
+prototypes.
+Le bénéfice attendu d’une telle opération est évidemment calculatoire ; notons qu’elle a également
+une influence sur le plan des performances, en fonction du nombre de prototypes choisi pour résumer
+une classe et de la manière dont ces prototypes sont déterminés.
+
+### Apprentissage des prototypes
+
+Cette variante de la méthode des K plus proches voisins comporte à présent une phase d’apprentissage
+: le calcul des prototypes qui résument les individus d’apprentissage dans chaque classe.
+Pour réaliser cet apprentissage, on utilisera l’algorithme des « Ck-means » 1 : pour chaque classe !k,
+on déterminera ainsi Ck centres qui résumeront la classe. L’ensemble de ces centres (étiquetés) sera
+ensuite utilisé à la place de l’ensemble d’apprentissage pour classer les individus de test.
+Les paramètres Ck, qui fixent pour chaque classe !k le nombre de prototypes qui la résument,
+doivent bien être différenciés du paramètre K, qui détermine le nombre de plus proches prototypes
+utilisés en phase de test pour classer les individus.
+
+### Questions
+
+Pour les jeux de données synthétiques, on pourra utiliser la fonction front.kppp pour afficher
+l’ensemble d’apprentissage, les prototypes obtenus et les frontières de décision associées.
+
+1. Supposons que l’on fixe Ck = 1 pour tout k = 1; : : : ; g, et K = 1 : à quel classifieur correspond
+alors la méthode des K plus proches prototypes ?
+2. Si l’on fixe à présent Ck = nk =
+Pn
+i=1 zik, quel classifieur retrouve-t-on ?
+3. Programmer une fonction kppp.app qui permettra de déterminer les Ck prototypes de chaque
+classe : elle prendra en arguments d’entrée l’ensemble d’apprentissage étiqueté (matrice d’observations
+Xapp et vecteur d’étiquettes zapp) et le nombre de prototypes par classe (vecteur
+Ck), et fournira en sortie les prototypes Xpro et les étiquettes associées zpro.
+4. Tester la méthode des K plus proches prototypes sur les jeux de données synthétiques du
+paragraphe 1.3, en choisissant Ck 2 f1; 2; 3; 4; 5g 2 et en faisant varier le nombre K de prototypes
+utilisés en phase de test. Commenter (on pourra comparer aux résultats obtenus dans
+le cas de la méthode des K plus proches voisins).
+5. Toujours pour Ck 2 f1; 2; 3; 4; 5g, déterminer le nombre optimal de prototypes Kopt, tout
+d’abord en utilisant la fonction kppv.tune avec un ensemble d’apprentissage pour la validation,
+puis un ensemble de validation distinct. Qu’observez-vous ?
+6. Traiter à présent les données Pima et Breastcancer. Commenter en comparant aux résultats
+obtenus au paragraphe 1.3.
+1. Il se peut que l’on veuille utiliser un indicateur de tendance centrale plus robuste aux points atypiques que la
+moyenne ; cela revient à remplacer l’algorithme des Ck-means par une autre méthode de partitionnement, comme par
+exemple la stratégie des Ck-médoïdes (dans laquelle on substitue la médiane à la moyenne).
+2. On fixera la même valeur de Ck pour toutes les classes.

@@ -1,0 +1,142 @@
+---
+title: "TD 8"
+output: html_notebook
+date: "Printemps 2019"
+university: "Université de Technologie de Compiègne"
+uv: "SY09"
+course: "Analyse des données et Apprentissage automatique"
+author: "Théodore BOURGEON"
+
+---
+
+#### Objectif TD : Éléments de théorie bayésienne de la décision
+
+Dans ce TP, on souhaite étudier les stratégies de Neyman-Pearson et de Bayes pour résoudre un
+problème de décision, dans le cas où les distributions conditionnelles voire les probabilités a priori
+sont connues.
+
+*** 
+
+# Problème et modélisation
+
+On considérera un problème (simplifié) d’identification de produits chimiques à partir de leur temps de dégradation. Plus particulièrement, on supposera être en présence de g = 2 produits, présents en proportions initiales $\pi_1$ (classe $\omega_1$), et $\pi_2$ (classe $\omega_2$).
+
+
+On suppose pouvoir tester le temps de dégradation des produits selon deux protocoles ; on notera X1 et X2 les temps de dégradation selon le premier et le second protocole, respectivement. Pour un même produit, on supposera indépendants ces temps X1 et X2 mesurés par chacun des deux protocoles. On suppose en outre que les distributions de temps de dégradation sont modélisés par des lois exponentielle.
+
+
+## Questions préliminaires
+
+##### 1. Quelle est la densité jointe du vecteur aléatoire $X = (X1,X2)^T$ dans chacune des classes ?
+
+$f : (x1,x2) \mapsto \lambda_1\lambda_2 exp(-\Lambda^Tx)1_{[Z=\omega_1]} + \theta_1\theta_2 exp(-\Theta^Tx)1_{[Z=\omega_2]}$
+
+##### 2. Montrer que la frontière de décision obtenue en appliquant la stratégie de Neyman-Pearson est une droite dont on précisera les paramètres.
+
+
+##### 3. Quelle frontière de décision obtient-on si l’on applique la stratégie de Bayes ?
+
+
+## Simulation
+On cherche à générer un échantillon de taille n suivant le modèle génératif décrit ci-dessus. Intuitivement, pour chaque nouvel individu, il faudrait : 
+
+* (1) Déterminer sa classe 
+* (2) Générer un vecteur aléatoire (composante par composante, les variables X1 et X2 étant indépendantes conditionnellement à la classe) suivant les paramètres correspondants.
+
+
+On propose donc le protocole de simulation suivant :
+
+ 
+* 1. calculer le nombre de points n1 présents dans la classe $\omega_1$ : on verra n1 comme la réalisation d’une v.a. suivant une loi binomiale
+* 2. générer n1 vecteurs x1; : : : ; xn1 en concaténant n1 réalisations de variables aléatoires 
+* 3. générer n2 = n 􀀀 n1 vecteurs xn1+1; : : : ; xn en concaténant n2 réalisations de variables aléatoires 
+
+### Questions
+
+##### 1. Implémenter ce protocole de simulation, et générer un échantillon étiqueté de taille n = 10000, en utilisant 
+```{r}
+generateData = function(n,pi,lambda,theta) {
+  # Génération des appartenances aux populations
+  n1 = rbinom(n=1,size = n,prob = pi[1])
+  n2 = n - n1
+  
+  Z = array(0,c(n,1))
+  Z[1:n1] = 1
+  Z[(n1+1):n] = 2
+  
+  # Génération des vecteurs aléatoires x1,…, xn1
+  X = array(data = 0,dim = c(n,2))
+  X[1:n1,1] = rexp(n1,lambda[1])
+  X[1:n1,2] = rexp(n1,lambda[2])
+    
+  # Génération des vecteurs aléatoires xn1+1,…, xn
+  X[(n1+1):n,1] = rexp(n2,theta[1])
+  X[(n1+1):n,2] = rexp(n2,theta[2])
+  
+  data = NULL
+  
+  data$X = X
+  data$Z = Z
+  data$n1 = n1
+  data$n2 = n2
+  data$n = n
+  
+  data
+}
+
+# Paramètres des lois
+n = 100000
+pi = c(0.6,0.4)
+lambda = c(1,2)
+theta = c(2,4)
+
+data = generateData(n,pi,lambda, theta)
+
+X = data$X
+Z = data$Z
+n1 = data$n1
+n2 = data$n2
+
+plot(X, col=c("blue", "green")[Z])
+```
+
+
+##### 2. Estimer le taux d’erreur de Bayes au moyen de cet échantillon.
+```{r}
+Theta = theta[1]*theta[2]
+Lambda = lambda[1]*lambda[2]
+
+C = - log(Theta/Lambda * pi[1]/pi[2])
+delta = lambda - theta
+
+res = X %*% delta
+
+
+a = - delta[1]/delta[2]
+b = C/delta[2]
+plot(X, col=c("blue", "green")[Z])
+abline(b,a)
+# filtre choix classe 
+C1 = (res < C) + 1 
+
+bayesError <- sum((C1 != Z))/n
+bayesError
+
+tauxBayesError1 = sum((C1 != Z)[Z == 1])/n1
+tauxBayesError1
+
+tauxBayesError2 = sum((C1 != Z)[Z == 2])/n2
+tauxBayesError2
+```
+
+
+##### 3. En utilisant le protocole d’évaluation des performances vu précédemment, appliquer la stratégie des K plus proches voisins à ce problème de décision. Comparer les performances obtenues au taux d’erreur de Bayes.
+```{r}
+
+```
+
+#####  4. (Subsidiaire) Justifier rigoureusement l’estimation de la probabilité d’erreur de Bayes par la moyenne empirique des erreurs commises par la règle de Bayes sur un échantillon donné.
+```{r}
+
+```
+

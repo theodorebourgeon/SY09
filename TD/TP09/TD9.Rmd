@@ -1,0 +1,189 @@
+---
+title: "TD 9 - Analyse discriminante"
+output: html_notebook
+date: "Printemps 2019"
+university: "Université de Technologie de Compiègne"
+uv: "SY09"
+course: "Analyse des données et Apprentissage automatique"
+author: "Théodore BOURGEON"
+---
+
+*** 
+
+> Rappel : 
+> Lors
+>
+
+*** 
+
+# 1. Analyse discriminante de données gaussiennes
+
+## 1.1 Implémentation
+
+### Introduction
+
+On souhaite comparer les performances de trois modèles d’analyse discriminante (analyse discriminante quadratique, analyse discriminante linéaire, et classifieur bayésien naïf sous hypothèse de normalité des classes), sur les jeux de données simulées Synth1-1000, Synth2-1000 et Synth3-1000.
+
+
+Pour chacun de ces jeux de données, la distribution conditionnelle à chaque classe est gaussienne, les paramètres pouvant en revanche changer d’un jeu de données à l’autre.
+On implémentera l’analyse discriminante via quatre fonctions : adq.app, adl.app, nba.app et ad.val. Les trois premières font l’apprentissage de chacun des modèles considérés : elles doivent
+donc prendre en arguments d’entrée le tableau de données Xapp et les étiquettes zapp associées, et retourner les paramètres du modèle (proportions, moyennes et matrices de covariance). On stockera de manière générique les matrices de covariance dans un tableau à trois dimensions (array).
+La fonction ad.val calcule les probabilités a posteriori des classes pour un ensemble d’individus, ainsi que le classement associé : elle prend donc en compte les paramètres du modèle et l’ensemble de données Xtst à classer, et retourne une structure contenant les probabilités prob estimées et les classes prédites pred. On pourra s’appuyer sur la fonction dmvnorm 1, qui permet de calculer la densité d’une loi normale multivariée pour un tableau de données.
+```{r}
+# Importation de dépendances
+source("./fonctions/mvdnorm.r")
+source("./fonctions/prob.ad.R")
+```
+
+
+```{r}
+adq.app = function(Xapp, zapp) {
+  # Apprentissage de l'ADQ
+
+	n = dim(Xapp)[1]
+	p = dim(Xapp)[2]
+	g = max(unique(zapp))
+
+	param = NULL
+	param$MCov = array(0, c(p,p,g))
+	param$mean = array(0, c(g,p))
+	param$prop = rep(0, g)
+
+	for (k in 1:g) {
+		indiceClassek = which(zapp==k)
+		X_k = X[indiceClassek,]
+
+		param$MCov[,,k] = cov.wt(X_k)$cov
+		param$mean[k,] = colMeans(X_k)
+		param$prop[k] = length(indiceClassek) / n
+	}
+
+	param
+}
+
+adl.app = function(Xapp, zapp) {
+  # Apprentissage de l'ADL
+  
+	n = dim(Xapp)[1]
+	p = dim(Xapp)[2]
+	g = max(unique(zapp))
+	param <- adq.app(Xapp, zapp)
+	
+	effec <- as.numeric(table(zapp))
+	MCov = param$MCov
+  MCovF = array(0, c(p,p))
+  
+	for (k in 1:g) {
+		MCov[,,k] <- effec[k]* MCov[,,k]
+		MCovF <- MCovF + MCov[,,k]
+	}
+	
+  for (k in 1:g) {
+    MCov[,,k] = MCovF / n 
+  }
+  
+  param$MCov = MCov
+	param
+}
+
+
+nba.app <- function(Xapp, zapp)
+{
+  g = max(unique(zapp))
+	param <- adq.app(Xapp, zapp)
+
+	for (k in 1:g)
+	{
+		param$MCov[,,k] <- diag(diag(param$MCov[,,k]))
+	}
+
+	param
+}
+
+ad.val <- function(param, Xtst) {
+  # Calcule les probabilités a posteriori pour un ensemble de données,  puis effectue le classement en fonction de ces probabilités
+	n <- dim(Xtst)[1]
+	p <- dim(Xtst)[2]
+	g <- length(param$prop)
+
+	out <- NULL
+
+	prob <- matrix(0, nrow=n, ncol=g)
+
+	for (k in 1:g)
+	{
+	  mu_k <- param$mean[,k]
+		sigma_k <- param$MCov[,,k]
+		prob[,k] <- param$prop[k] * mvdnorm(Xtst, mu_k, sigma_k)
+	}
+	prob <- prob / rowSums(prob)
+	pred <- max.col(prob)
+
+	out$prob <- prob
+	out$pred <- pred
+
+	out
+}
+```
+
+### Vérification des fonctions
+
+La Figure 1 montre les courbes de niveau des probabilités a posteriori $\widehat{Pr}(\omega_k|x)$ estimées lorsque la totalité des données Synth1-40 sont utilisées pour l’apprentissage du modèle. 
+
+On pourra utiliser la fonction **prob.ad**, disponible sur le site de l’UV, pour afficher les courbes de niveau des probabilités
+a posteriori $\widehat{Pr}(\omega_1|x)$ estimées par un modèle. On rappelle que la frontière de décision estimée entre les deux classes $\omega_1$ et $\omega_2$ correspond à la courbe de niveau $\widehat{Pr}(\omega_1|x) = \widehat{Pr}(\omega_2|x)$
+
+```{r}
+data = read.csv("./donnees/Synth1-40.csv")
+X = data[,1:2]
+z = data[,3]
+
+# Apprentissage sur tout le jeu de données
+print("ADQ")
+adq.params = adq.app(Xapp = X, zapp = z)
+adq.params
+print("ADL")
+adl.params = adl.app(Xapp = X, zapp = z)
+adl.params
+print("NBA")
+nba.params = nba.app(Xapp = X, zapp = z)
+nba.params
+
+```
+
+```{r}
+# Affichage des frontière de décisions
+source("fonctions/prob.ad.R")
+library(MASS)
+niv = c(0.4,0.5,0.6)
+prob.ad(param = adq.params, X = X, z = z, niveaux = niv)
+prob.ad(param = adl.params, X = X, z = z, niveaux = niv)
+prob.ad(param = nba.params, X = X, z = z, niveaux = niv)
+
+```
+
+### Traitement des données
+
+On utilisera le même protocole expérimental que précédemment (séparation des données en ensembles
+d’apprentissage et de test, apprentissage, puis classement des données et évaluation des
+performances), et on le répétera N = 20 fois pour chaque jeu de données.
+
+1. Pour chaque jeu de données, calculer le taux d’erreur (de test) moyen sur les N = 20 séparations effectuées. On pourra s’appuyer sur les frontières de décision obtenues pour analyser les résultats. Comment peut-on les interpréter ?
+
+
+
+
+2. Recommencer en ne sélectionnant que napp = 20 exemples au total pour l’apprentissage ;
+comparer et interpréter.
+```{r}
+
+```
+
+## 1.2 Exercice théorique : règle de Bayes
+
+
+# 2. Détection de spams par analyse discriminante
+
+## 2.1 Utilisation des modèles précédents
+
+## 2.2 Classifieur bayésien naïf pour données binaires

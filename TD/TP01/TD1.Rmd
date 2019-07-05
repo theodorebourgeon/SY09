@@ -1,0 +1,241 @@
+---
+title: "TD1"
+output: html_notebook
+---
+
+#Informations
+
+* Un seul projet tout le long du semestre 
+* Presentation de projet lors de la derniere seance 
+* Etude complete d'un jeu de donnée / nouvelle methode 
+
+####Objectif TD : Manipuler dataframe 
+
+#Exercice 1
+
+**read.csv** = Fichier séparé par une virgule avec un point pour séparateur décimal. Pas de
+header par défaut.
+
+**read.csv2** = Fichier séparé par un point virgule avec une virgule pour séparateur décimal. Pas
+de header par défaut.
+
+**read.delim** Fichier séparé par une tabulation avec un point pour séparateur décimal.
+
+**read.delim2** Fichier séparé par une tabulation avec une virgule pour séparateur décimal.
+
+Arguments : 
+
+**sep** Spécifie le séparateur
+
+**header** Spécifie si la première ligne est une ligne d’en-tête
+
+**row.names = 1** si la première colonne est une colonne nommant les individus (chaque ligne à un numero)
+
+```{r}
+iris1 <- read.table(sep='&',header = TRUE, "donnees/iris1.data")
+iris2 <- read.table(sep='\t',header = TRUE,"donnees/iris2.data")
+iris3 <- read.table(sep=';',header = TRUE,"donnees/iris3.data")
+iris4 <- read.table(sep=' ',header = TRUE, row.names = 1,  "donnees/iris4.data")
+```
+
+```{r}
+check <- function(data) {
+stopifnot(colnames(data)[1] == "Sepal.Length",
+colnames(data)[2] == "Sepal.Width",
+colnames(data)[3] == "Petal.Length",
+colnames(data)[4] == "Petal.Width",
+colnames(data)[5] == "Species",
+nrow(data) == 150,
+ncol(data) == 5,
+is.numeric(data[,1]),
+is.numeric(data[,2]),
+is.numeric(data[,3]),
+is.numeric(data[,4]),
+is.factor(data[,5]))
+print("Chargement OK")
+}
+check(iris1)
+check(iris2)
+check(iris3)
+check(iris4)
+```
+
+
+```{r}
+head(iris1)
+```
+```{r}
+summary(iris1)
+```
+
+#Exercice 2
+**factor** : Correspond à une variable qualitative
+
+**character** : Correspond à une variable qualitative mais stocké dans un vecteur plutôt qu’un facteur
+
+**numeric** : Correspond à une variable quantitative continue
+
+**integer** : Correspond à une variable quantitative discrète (les entiers naturels)
+
+**logical** : Correspond à une variable binaire
+
+```{r}
+class(iris[,1])
+class(iris[,5])
+```
+
+```{r}
+class(read.table(text='TRUE')[,1])
+class(read.table(text='F')[,1])
+class(read.table(text='A')[,1])
+class(read.table(text='3.14')[,1])
+class(read.table(text='2')[,1])
+```
+
+
+```{r}
+summary(iris1)
+sapply(iris1, class)
+```
+
+Si la classe n’est pas correctement inférée par R, on peut les spécifier explicitement lors du chargement du jeu de données avec **l’argument colClasses**. Si cela n’est pas possible, il faut changer le type après chargement avec les fonctions :
+
+* as.numeric
+* as.logical
+* as.integer
+* as.factor
+* as.ordered
+
+```{r}
+data <- load("donnees/iris.Rdata")
+data
+head(iris5)
+sapply(iris5, class)
+iris5$Sepal.Length <- as.numeric(iris5$Sepal.Length)
+iris5$Sepal.Width <- as.numeric(iris5$Sepal.Width)
+iris5$Petal.Length <- as.numeric(iris5$Petal.Length)
+iris5$Petal.Width <- as.numeric(iris5$Petal.Width)
+iris5$Species <- as.factor(iris5$Species)
+sapply(iris5, class)
+
+head(iris6)
+sapply(iris6, class)
+iris6$Sepal.Length <- as.numeric(iris6$Sepal.Length)
+iris6$Sepal.Width <- as.numeric(iris6$Sepal.Width)
+iris6$Petal.Length <- as.numeric(iris6$Petal.Length)
+iris6$Petal.Width <- as.numeric(iris6$Petal.Width)
+iris6$Species <- as.factor(iris6$Species)
+sapply(iris6, class)
+```
+
+#Exercice 3 
+Parfois il est nécessaire de changer les modalités d’un facteur ou de changer leur ordre dans le cas
+d’un facteur ordonné. On pourra utiliser pour ce faire la commande factor :
+
+ * `donnees$champ1 <- factor(donnees$champ1, levels=modalites1)`
+* `donnees$champ2 <- factor(donnees$champ2, levels=modalites2, ordered=T)`
+
+```{r}
+data <- read.csv("donnees/sy02-p2016.csv")
+head(data)
+sapply(data, class)
+```
+```{r}
+data$niveau <- factor(data$niveau, levels = c("1","2","3","4","5","6"), ordered = T) 
+
+data$correcteur.median <- factor(data$correcteur.median, levels = unique(c(data$correcteur.median,data$correcteur.final))) 
+
+data$correcteur.final <- factor(data$correcteur.final, levels = unique(c(data$correcteur.median,data$correcteur.final))) 
+
+data$resultat <- factor(data$niveau, levels = c("A","B","C","D","E","Fx","F"), ordered = T) 
+
+sapply(data, class)
+```
+
+#Exercice 4 
+
+**NA** valeur non disponible (not available).
+**Inf** valeur infinie
+**NaN** Valeur non définie 
+
+#Exercice 5
+
+```{r}
+data <- read.table('donnees/babies23.data', header = T)
+head(data)
+```
+```{r}
+babies <- data[,c(7,5,8,10,12,13,21,11)]
+names(babies) <- c("bwt", "gestation", "parity", "age", "height", "weight", "smoke", "education")
+hist(babies$gestation)
+```
+
+```{r}
+babies$bwt[babies$bwt == 999] <- NA
+babies$gestation[babies$gestation == 999] <- NA
+babies$age[babies$age == 99] <- NA
+babies$height[babies$height == 99] <- NA
+babies$weight[babies$weight == 999] <- NA
+babies$smoke[babies$smoke == 9] <- NA
+babies$education[babies$education == 9] <- NA
+sapply(babies, class)
+babies$education <- factor(babies$education, ordered = T, levels = unique(babies$education))
+
+babies$smoke[babies$smoke != 1] <- "NonSmoking"
+babies$smoke[babies$smoke == 1] <- "Smoking"
+
+hist(babies$gestation)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
